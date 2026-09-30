@@ -1,104 +1,71 @@
-module alu_WIDTH_bit #(
-    parameter WIDTH = 16
-)(
-    input [WIDTH - 1:0] A,
-    input [WIDTH - 1:0] B,
+module fifo (
+    input logic clk,
+    input logic rst,
 
-    input logic [1:0] control,
-    input logic [2:0] op,
-    input logic sel,
+    input logic RD,
+    input logic WR,
 
-    output logic [WIDTH - 1:0] result,
-    output logic C,
-    output logic Z,
-    output logic S,
-    output logic V
+    input logic [7:0] data_in,
+    output logic [7:0] data_out,
+
+    output logic empty,
+    output logic full
 );
 
-    logic [WIDTH:0] temp;
+    logic [7:0] data [0:3];
 
-    always_comb begin : alu_logic
-        result = 'b0;
-        C = 1'b0;
-        Z = 1'b0;
-        S = 1'b0;
-        V = 1'b0;
-        temp = 'b0;
+    logic [1:0] rd_ptr;
+    logic [1:0] wr_ptr;
 
-        case(control)
+    logic [2:0] count;
 
-            2'b00 : begin
+    logic do_read;
+    logic do_write;
 
-                case(op)
+    assign empty = (count == 3'd0);
+    assign full = (count == 3'd4);
 
-                    3'b000 : begin
+    assign do_write = !WR && !full;
+    assign do_read = !RD && !empty;
 
-                        temp = {1'b0, A} + {1'b0, B};
-                        result = temp[WIDTH - 1:0];
-                        C = temp[WIDTH];
+    always_ff @(posedge clk) begin : fifo_block
 
-                        //signed overflow
-                        V = (~(A[WIDTH - 1] ^ B[WIDTH - 1])) & (result[WIDTH - 1] ^ A[WIDTH - 1]);
+        if (rst) begin
+            rd_ptr <= 2'd0;
+            wr_ptr <= 2'd0;
+            count <= 3'd0;
+            data_out <= 8'd0;
+        end
 
-                    end
+        else begin
 
-                    3'b001 : begin
+            // Write
+            if (do_write) begin
+                data[wr_ptr] <= data_in;
 
-                        temp = {1'b0, A} + {1'b0, ~B} + 1'b1;
-                        result = temp[WIDTH - 1:0];
-                        //C = 1 means no borrow
-                        C = temp[WIDTH];
-
-                        V = ((A[WIDTH - 1] ^ B[WIDTH - 1])) & (result[WIDTH - 1] ^ A[WIDTH -1]);
-
-                    end
-
-                    default result = 'b0;
-
-                endcase
-
+                if (wr_ptr == 2'd3)
+                    wr_ptr <= 2'd0;
+                else
+                    wr_ptr <= wr_ptr + 1'b1;
             end
 
-            2'b01 : begin
+            // Read
+            if (do_read) begin
+                data_out <= data[rd_ptr];
 
-                case(op)
-
-                    3'b000 : result = A & B;
-
-                    3'b001 : result = A | B;
-
-                    3'b010 : result = A ^ B;
-
-                    3'b011 : result = sel ? ~B : ~A;
-
-                    default : result = 'b0;
-
-                endcase
-
+                if (rd_ptr == 2'd3)
+                    rd_ptr <= 2'd0;
+                else
+                    rd_ptr <= rd_ptr + 1'b1;
             end
 
-            2'b11 : begin
+            // Count
+            if (do_write && !do_read)
+                count <= count + 1'b1;
+            else if (do_read && !do_write)
+                count <= count - 1'b1;
 
-                case(op)
-
-                    3'b000 : result = sel ? (B << 1) : (A << 1);
-
-                    3'b001 : result = sel ? (B >> 1) : (A >> 1);
-
-                    default : result = 'b0;
-
-                endcase
-
-            end
-
-            default : result = 'b0;
-
-        endcase
-            
-        if(result == 8'b0) Z = 1'b1;
-        else Z = 1'b0;
-
-        S = result[WIDTH - 1];
+        end
 
     end
 
